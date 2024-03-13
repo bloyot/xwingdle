@@ -2,7 +2,8 @@
   (:require
     [camel-snake-kebab.core :as csk]
     [cheshire.core :as cheshire]
-    [clojure.pprint :as pp]))
+    [clojure.pprint :as pp]
+    [clojure.string :as str]))
 
 (def files
   (let [directory (clojure.java.io/file (clojure.java.io/resource "data/pilots"))
@@ -11,9 +12,21 @@
          (filter (comp not dir?)
                  (tree-seq dir? #(.listFiles %) directory)))))
 
-(def pilot-name-overrides
-  {"darthvader-swz105"        "Darth Vader (SSP)"
-   "darthvader-battleofyavin" "Darth Vader (BoY)"})
+(defn disambiguate-pilot-name
+  "Given the pilot id and pilot name, ensure there aren't any duplicate names because
+  of standard loadout or multiple releases. Append the scenario pack if applicable, or else
+  use a manual override"
+  [pilot-id pilot-name]
+  (cond (str/includes? pilot-id "battleofyavin") (str pilot-name " (BoY)")
+        (str/includes? pilot-id "siegeofcoruscant") (str pilot-name " (SoC)")
+        (str/includes? pilot-id "battleoverendor") (str pilot-name " (BoE)")
+        (str/includes? pilot-id "swz105") (str pilot-name " (SSP)")
+        (str/includes? pilot-id "swz98") (str pilot-name " (TBE)")
+        (str/includes? pilot-id "swz106") (str pilot-name " (SSP)")
+        (str/includes? pilot-id "swz103") (str pilot-name " (YLF)")
+        (str/includes? pilot-id "swz103-sl") (str pilot-name " (YLF-SL)")
+        (str/includes? pilot-id "swz68") (str pilot-name " (HoH)")
+        :else pilot-name))
 
 (defn load-pilot
   "Given the pilots json data and an id, pull out the specific pilot/ship stats into a map"
@@ -39,7 +52,10 @@
      :loadout            (:loadout pilot)
      :standard-loadout?  (contains? pilot :standardLoadout)
      :ship-display-name  (:name ship)
-     :pilot-display-name (get pilot-name-overrides pilot-id (:name pilot))
+     :pilot-display-name (disambiguate-pilot-name pilot-id (:name pilot))
+     :image              (:image pilot)
+     :faction            (keyword (:faction ship))
+     :ship-id            (keyword (:xws ship))
      :standard-legal?    (:standard pilot)}))
 
 
@@ -50,10 +66,10 @@
   ([pilot-file standard-only?]
    (let [ship (cheshire/parse-string (slurp pilot-file) true)]
      (as-> (:pilots ship) p
-         (map #(load-pilot ship (:xws %)) p)
-         (filter #(:standard-legal? %) p)
-         (group-by :id p)
-         (update-vals p first)))))
+           (map #(load-pilot ship (:xws %)) p)
+           (filter #(:standard-legal? %) p)
+           (group-by :id p)
+           (update-vals p first)))))
 
 (defn pretty-spit
   [file-name collection]
